@@ -12,6 +12,8 @@ from aws_cdk import aws_ses as ses
 from aws_cdk import aws_ses_actions as ses_actions
 from aws_cdk import aws_ssm as ssm
 from aws_cdk.aws_secretsmanager import Secret
+from aws_cdk import aws_events as events
+from aws_cdk import aws_events_targets as targets
 
 
 class BogamailStack(Stack):
@@ -74,10 +76,11 @@ class BogamailStack(Stack):
         receive_function = PythonFunction(
             self,
             "BogamailReceiveFunction",
-            entry="../receive_lambda",
+            entry="../src/",
             index="lambda_handler.py",
-            handler="lambda_handler",
-            runtime=lambda_.Runtime.PYTHON_3_8,
+            handler="receive_handler",
+            timeout=Duration.seconds(300),
+            runtime=lambda_.Runtime.PYTHON_3_12,
             environment={
                 "MAIL_TABLE": mail_table.table_name,
                 "RECEIVE_QUEUE_URL": receive_queue.queue_url,
@@ -88,14 +91,37 @@ class BogamailStack(Stack):
         send_function = PythonFunction(
             self,
             "BogamailSendFunction",
-            entry="../send_lambda",
+            entry="../src/",
             index="lambda_handler.py",
-            handler="lambda_handler",
-            runtime=lambda_.Runtime.PYTHON_3_8,
+            handler="send_handler",
+            timeout=Duration.seconds(300),
+            runtime=lambda_.Runtime.PYTHON_3_12,
             environment={
                 "MAIL_TABLE": mail_table.table_name,
                 "SEND_QUEUE_URL": client_queue.queue_url,
             },
+        )
+
+        schedule_function = PythonFunction(
+            self,
+            "BogamailScheduledSendFunction",
+            entry="../src/",
+            index="lambda_handler.py",
+            timeout=Duration.seconds(300),
+            handler="schedule_handler",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            environment={
+                "MAIL_TABLE": mail_table.table_name,
+            },
+        )
+
+        events.Rule(
+            self,
+            "ScheduledSendRule",
+            schedule=events.Schedule.cron(
+                minute="1", hour="*", day="*", month="*", year="*"
+            ),
+            targets=[targets.LambdaFunction(schedule_function)],
         )
 
         rule_set = ses.ReceiptRuleSet(self, "BogamailRuleSet")
@@ -117,15 +143,33 @@ class BogamailStack(Stack):
         client_queue_parameter = ssm.StringParameter(
             self,
             "ClientQueueSsmParameter",
-            parameter_name="/bogamail/client_queue_url",
+            parameter_name="/bogamail/queue_url/client",
             string_value=client_queue.queue_url,
         )
 
+        send_queue_parameter = ssm.StringParameter(
+            self,
+            "SendQueueSsmParameter",
+            parameter_name="/bogamail/queue_url/send",
+            string_value=send_queue.queue_url,
+        )
+
         mail_table_parameter.grant_read(receive_function)
+        client_queue_parameter.grant_read(receive_function)
+        send_queue_parameter.grant_read(send_function)
         mail_table.grant_write_data(receive_function)
         client_queue.grant_send_messages(receive_function)
         receipt_rule.add_action(ses_actions.Sns(topic=receive_topic))
         receive_function.add_event_source(SqsEventSource(receive_queue))
         send_function.add_event_source(SqsEventSource(send_queue))
-        send_function.grant_read(mail_table)
-        send_function.grant_read_params(client_queue_parameter)
+        mail_table.grant_read_write_data(send_function)
+        mail_table.grant_read_write_data(schedule_function)
+
+        password_parameter_policy_statement = iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[
+                f"arn:aws:ssm:{self.region}:{self.account}:parameter/bogamail/passwords/*"
+            ],
+        )
+
+        send_function.add_to_role_policy(password_parameter_policy_statement)

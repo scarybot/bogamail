@@ -1,6 +1,0 @@
-boto3
-aws-cdk
-aws-cdk-lib
-aws-cdk.aws-lambda-python-alpha
-
-
