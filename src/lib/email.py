@@ -7,7 +7,7 @@ import uuid
 from typing import Self
 import json
 import logging
-import string
+import time
 
 queue_url_cache = {}
 mail_table_cache = None
@@ -102,8 +102,8 @@ class Email:
     _message_id: str = None
     sent: bool = False
     message: email.message.EmailMessage = None
-    direction: str = "in"
     receipt_handle: str = None
+    ts: int = time.time()
 
     def __init__(
         self,
@@ -114,8 +114,8 @@ class Email:
         references: list[str] = None,
         message_id: str = None,
         message: email.message.EmailMessage = None,
-        direction: str = "in",
         receipt_handle: str = None,
+        ts: int = 0,
     ):
         self.sender = sender
         self.recipient = recipient
@@ -124,13 +124,13 @@ class Email:
         self.references = references
         self._message_id = message_id
         self.message = message
-        self.direction = direction
-        self.sent = True if direction == "in" else False
+        self.sent = False
         self.receipt_handle = receipt_handle
+        self.ts = ts if ts else time.time()
 
     @classmethod
     def from_message_string(
-        self, email_string: str, direction: str, receipt_handle: str = None
+        self, email_string: str, receipt_handle: str = None
     ) -> Self:
         parsed_email = email.message_from_string(email_string)
         sender = Contact.from_header(parsed_email["From"])
@@ -157,16 +157,16 @@ class Email:
             references=cleaned_references,
             message_id=message_id,
             message=parsed_email,
-            direction=direction,
             receipt_handle=receipt_handle,
+            ts=int(time.time()),
         )
 
     @classmethod
-    def from_id(self, id: str) -> Self:
+    def from_id(self, id: str, sender: str) -> Self:
         dynamodb = boto3.client("dynamodb")
         response = dynamodb.get_item(
             TableName=mail_table(),
-            Key={"id": {"S": id}},
+            Key={"id": {"S": id}, "sender": {"S": sender}},
         )
 
         if "Item" in response:
@@ -234,13 +234,38 @@ class Email:
         )
 
     def thread(self):
-        return [Email.from_id(id) for id in self.references]
+        dynamodb = boto3.client("dynamodb")
+        sender_response = dynamodb.query(
+            TableName=mail_table(),
+            IndexName="SenderThreadIndex",
+            KeyConditionExpression="sender = :sender",
+            ExpressionAttributeValues={":sender": {"S": self.sender.email}},
+        )
+
+        recipient_response = dynamodb.query(
+            TableName=mail_table(),
+            IndexName="RecipientThreadIndex",
+            KeyConditionExpression="recipient = :recipient",
+            ExpressionAttributeValues={":recipient": {"S": self.recipient.email}},
+        )
+
+        thread = []
+        if "Items" in sender_response:
+            for item in sender_response["Items"]:
+                thread.append(Email.from_message_string(item["message"]["S"]))
+
+        if "Items" in recipient_response:
+            for item in recipient_response["Items"]:
+                thread.append(Email.from_message_string(item["message"]["S"]))
+
+        thread.sort(key=lambda x: x.ts, reverse=True)
+
+        return thread
 
     def as_dynamodb_item(self):
         parsed_email = self.as_message()
 
         item = {
-            "direction": {"S": self.direction},
             "sender": {"S": self.sender.email},
             "sender_name": {"S": self.sender.name},
             "recipient": {"S": self.recipient.email},
@@ -249,6 +274,7 @@ class Email:
             "subject": {"S": self.subject},
             "message": {"S": parsed_email.as_string()},
             "sent": {"S": str(self.sent)},
+            "ts": {"N": str(int(time.time()))},
         }
 
         return item
@@ -320,7 +346,7 @@ def wait_for_email() -> list[Email]:
         for message in messages:
             receipt_handle = message["ReceiptHandle"]
             body = json.loads(message["Body"])
-            email = Email.from_message_string(body["email"], "in", receipt_handle)
+            email = Email.from_message_string(body["email"], receipt_handle)
             logging.info(f"email from {email.sender.email} to {email.recipient.email}")
 
             emails.append(email)

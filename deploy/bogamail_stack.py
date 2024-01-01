@@ -48,9 +48,19 @@ class BogamailStack(Stack):
 
         mail_table.add_global_secondary_index(
             partition_key=dynamodb.Attribute(
-                name="thread_previous_id", type=dynamodb.AttributeType.STRING
+                name="sender", type=dynamodb.AttributeType.STRING
             ),
-            index_name="ThreadIndex",
+            sort_key=dynamodb.Attribute(name="ts", type=dynamodb.AttributeType.NUMBER),
+            index_name="SenderThreadIndex",
+            projection_type=dynamodb.ProjectionType.ALL,
+        )
+
+        mail_table.add_global_secondary_index(
+            partition_key=dynamodb.Attribute(
+                name="recipient", type=dynamodb.AttributeType.STRING
+            ),
+            sort_key=dynamodb.Attribute(name="ts", type=dynamodb.AttributeType.NUMBER),
+            index_name="RecipientThreadIndex",
             projection_type=dynamodb.ProjectionType.ALL,
         )
 

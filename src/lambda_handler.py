@@ -3,6 +3,7 @@ import os
 import base64
 import boto3
 import smtplib
+import time
 from datetime import datetime
 from lib.email import Email, mail_table
 
@@ -16,7 +17,7 @@ def is_base64(s):
 
 def get_emails_to_be_sent() -> list[Email]:
     dynamodb_client = boto3.client("dynamodb")
-    current_timestamp = int(datetime.now().timestamp())
+    current_timestamp = int(time.time())
 
     response = dynamodb_client.query(
         TableName=mail_table(),
@@ -90,7 +91,7 @@ def receive_handler(event, context):
             else ses_message["content"]
         ).decode("utf-8")
 
-        email = Email.from_message_string(decoded_message, "in")
+        email = Email.from_message_string(decoded_message)
         email.write()
 
         print(f"Received message: {email.get_message_id()}")
@@ -104,7 +105,7 @@ def send_handler(event, context):
     for record in event["Records"]:
         decoded_email = json.loads(record["body"])
         print(decoded_email)
-        this_email = Email.from_message_string(decoded_email.get("email"), "out")
+        this_email = Email.from_message_string(decoded_email.get("email"))
 
         if decoded_email.get("send_after", 0) == 0:
             try:
