@@ -199,3 +199,50 @@ class BogamailStack(Stack):
         )
 
         send_function.add_to_role_policy(password_parameter_policy_statement)
+
+        bogamail_policy_document = iam.PolicyDocument(
+            statements=[
+                iam.PolicyStatement(
+                    actions=[
+                        "dynamodb:GetItem",
+                        "dynamodb:PutItem",
+                        "dynamodb:UpdateItem",
+                        "dynamodb:Query",
+                        "dynamodb:Scan",
+                        "dynamodb:DeleteItem",
+                        "dynamodb:DescribeTable",
+                    ],
+                    resources=[data_table.table_arn, mail_table.table_arn],
+                ),
+                iam.PolicyStatement(
+                    actions=[
+                        "sqs:SendMessage",
+                        "sqs:ReceiveMessage",
+                        "sqs:DeleteMessage",
+                        "sqs:GetQueueAttributes",
+                    ],
+                    resources=[
+                        receive_queue.queue_arn,
+                        client_queue.queue_arn,
+                        send_queue.queue_arn,
+                    ],
+                ),
+                iam.PolicyStatement(
+                    actions=["sns:Publish"], resources=[receive_topic.topic_arn]
+                ),
+                iam.PolicyStatement(
+                    actions=["ssm:GetParameter"],
+                    resources=[
+                        f"arn:aws:ssm:{self.region}:{self.account}:parameter/bogamail/*"
+                    ],
+                ),
+            ]
+        )
+
+        bogamail_policy = iam.ManagedPolicy(self, "BogamailPolicy", document=bogamail_policy_document)
+
+        bogamail_role = iam.Role(
+            self, "BogamailRole", assumed_by=iam.AccountPrincipal(self.account)
+        )
+
+        bogamail_role.add_managed_policy(bogamail_policy)
