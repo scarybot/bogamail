@@ -36,6 +36,15 @@ class BogamailStack(Stack):
 
         receive_topic.add_subscription(SqsSubscription(receive_queue))
 
+        data_table = dynamodb.Table(
+            self,
+            "DataTable",
+            partition_key=dynamodb.Attribute(
+                name="email", type=dynamodb.AttributeType.STRING
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+        )
+
         mail_table = dynamodb.Table(
             self,
             "MailTable",
@@ -148,6 +157,13 @@ class BogamailStack(Stack):
             "MailTableSsmParameter",
             parameter_name="/bogamail/mail_table",
             string_value=mail_table.table_name,
+        )
+
+        data_table_parameter = ssm.StringParameter(
+            self,
+            "DataTableSsmParameter",
+            parameter_name="/bogamail/data_table",
+            string_value=data_table.table_name,
         )
 
         client_queue_parameter = ssm.StringParameter(
