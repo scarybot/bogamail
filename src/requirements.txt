@@ -1,2 +1,6 @@
 boto3
+pyyaml
 termcolor
+ctransformers
+ctransformers[gptq]
+tqdm
