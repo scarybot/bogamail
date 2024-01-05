@@ -1,6 +1,6 @@
 import time
 from lib.email import Email, wait_for_email
-
+from lib.data import store_scam_data, get_scam_data
 
 def main():
     while True:
@@ -22,5 +22,6 @@ def generate_reply_to(received_email: Email) -> Email:
         subject="Hello yourself",
         body="Well hello there!!",
     )
+
 
 main()
