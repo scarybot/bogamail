@@ -35,4 +35,7 @@ def get_scam_data(email: str) -> dict:
     dynamodb = boto3.resource("dynamodb")
     table = dynamodb.Table(data_table())
     response = table.get_item(Key={"email": email})
-    return json.loads(response["Item"]["data"])
+    if "Item" not in response:
+        return {}
+    else:
+        return json.loads(response["Item"]["data"])
