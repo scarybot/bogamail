@@ -276,12 +276,12 @@ class Email:
 
         recipient_response = dynamodb.query(
             TableName=mail_table(),
-            IndexName="RecipientThreadIndex",
-            KeyConditionExpression="recipient = :recipient",
-            FilterExpression="sender = :sender",
+            IndexName="SenderThreadIndex",
+            KeyConditionExpression="sender = :sender",
+            FilterExpression="recipient = :recipient",
             ExpressionAttributeValues={
-                ":recipient": {"S": self.recipient.email},
-                ":sender": {"S": self.sender.email},
+                ":sender": {"S": self.recipient.email},
+                ":recipient": {"S": self.sender.email},
             },
         )
 
