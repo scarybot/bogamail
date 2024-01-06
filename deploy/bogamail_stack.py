@@ -212,7 +212,12 @@ class BogamailStack(Stack):
                         "dynamodb:DeleteItem",
                         "dynamodb:DescribeTable",
                     ],
-                    resources=[data_table.table_arn, mail_table.table_arn],
+                    resources=[
+                        data_table.table_arn,
+                        f"{data_table.table_arn}/index/*",
+                        mail_table.table_arn,
+                        f"{mail_table.table_arn}/index/*",
+                    ],
                 ),
                 iam.PolicyStatement(
                     actions=[
@@ -239,7 +244,9 @@ class BogamailStack(Stack):
             ]
         )
 
-        bogamail_policy = iam.ManagedPolicy(self, "BogamailPolicy", document=bogamail_policy_document)
+        bogamail_policy = iam.ManagedPolicy(
+            self, "BogamailPolicy", document=bogamail_policy_document
+        )
 
         bogamail_role = iam.Role(
             self, "BogamailRole", assumed_by=iam.AccountPrincipal(self.account)
