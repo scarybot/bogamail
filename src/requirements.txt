@@ -5,3 +5,4 @@ ctransformers
 ctransformers[gptq]
 tqdm
 bs4
+chardet

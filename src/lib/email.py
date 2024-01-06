@@ -8,8 +8,9 @@ from typing import Self
 import json
 import logging
 import time
-from email import EmailMessage
+from email.message import EmailMessage
 from bs4 import BeautifulSoup
+import chardet
 
 queue_url_cache = {}
 mail_table_cache = None
@@ -59,6 +60,18 @@ def generate_message_id(domain="gmail.com"):
     return "<" + str(uuid.uuid4()) + f"@{domain}>"
 
 
+def decode_payload(payload):
+    # Detect and decode payload using chardet
+    if isinstance(payload, bytes):
+        detected = chardet.detect(payload)
+        try:
+            return payload.decode(detected["encoding"])
+        except UnicodeDecodeError:
+            return "Failed to decode with detected encoding."
+    else:
+        return payload
+
+
 def get_plain_text_body(email_message: EmailMessage) -> str:
     text_content = ""
     html_content = ""
@@ -67,34 +80,40 @@ def get_plain_text_body(email_message: EmailMessage) -> str:
         for part in email_message.walk():
             charset = part.get_content_charset() or "utf-8"
             content_type = part.get_content_type()
-            payload = part.get_payload(decode=True)
 
-            try:
-                if content_type == "text/plain":
-                    text_content = payload.decode(charset)
-                elif content_type == "text/html":
-                    html_content = payload.decode(charset)
-            except (UnicodeDecodeError, LookupError) as e:
-                print(f"decoding failed for a part with charset {charset}: {e}")
-
+            if part.is_multipart():
+                for subpart in part.get_payload():
+                    if subpart.get_content_type() == "text/plain":
+                        text_content += decode_payload(subpart.get_payload(decode=True))
+                    elif subpart.get_content_type() == "text/html":
+                        html_content += decode_payload(subpart.get_payload(decode=True))
+            else:
+                payload = part.get_payload(decode=True)
+                try:
+                    if content_type == "text/plain":
+                        text_content += decode_payload(payload)
+                    elif content_type == "text/html":
+                        html_content += decode_payload(payload)
+                except (UnicodeDecodeError, LookupError) as e:
+                    print(f"decoding failed for a part with charset {charset}: {e}")
     else:
         payload = email_message.get_payload(decode=True)
         charset = email_message.get_content_charset() or "utf-8"
         try:
-            text_content = payload.decode(charset)
+            text_content += decode_payload(payload)
         except (UnicodeDecodeError, LookupError) as e:
             print(
                 f"decoding failed for single-part message with charset {charset}: {e}"
             )
 
     if text_content:
-        return text_content
+        return text_content.strip()
 
     if html_content:
         soup = BeautifulSoup(html_content, "html.parser")
-        return soup.get_text()
+        return soup.get_text().strip()
 
-    return "no useful text could be extracted"
+    return "No useful text could be extracted."
 
 
 @dataclass
