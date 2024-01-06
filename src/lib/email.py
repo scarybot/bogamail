@@ -8,6 +8,8 @@ from typing import Self
 import json
 import logging
 import time
+from email import EmailMessage
+from bs4 import BeautifulSoup
 
 queue_url_cache = {}
 mail_table_cache = None
@@ -57,17 +59,42 @@ def generate_message_id(domain="gmail.com"):
     return "<" + str(uuid.uuid4()) + f"@{domain}>"
 
 
-def get_plain_text_body(email_message):
+def get_plain_text_body(email_message: EmailMessage) -> str:
+    text_content = ""
+    html_content = ""
+
     if email_message.is_multipart():
         for part in email_message.walk():
-            if part.get_content_type() == "text/plain" and not part.is_multipart():
-                return part.get_payload(decode=True).decode(
-                    part.get_content_charset() or "utf-8"
-                )
+            charset = part.get_content_charset() or "utf-8"
+            content_type = part.get_content_type()
+            payload = part.get_payload(decode=True)
+
+            try:
+                if content_type == "text/plain":
+                    text_content = payload.decode(charset)
+                elif content_type == "text/html":
+                    html_content = payload.decode(charset)
+            except (UnicodeDecodeError, LookupError) as e:
+                print(f"decoding failed for a part with charset {charset}: {e}")
+
     else:
-        return email_message.get_payload(decode=True).decode(
-            email_message.get_content_charset() or "utf-8"
-        )
+        payload = email_message.get_payload(decode=True)
+        charset = email_message.get_content_charset() or "utf-8"
+        try:
+            text_content = payload.decode(charset)
+        except (UnicodeDecodeError, LookupError) as e:
+            print(
+                f"decoding failed for single-part message with charset {charset}: {e}"
+            )
+
+    if text_content:
+        return text_content
+
+    if html_content:
+        soup = BeautifulSoup(html_content, "html.parser")
+        return soup.get_text()
+
+    return "no useful text could be extracted"
 
 
 @dataclass
@@ -170,7 +197,7 @@ class Email:
         )
 
         if "Item" in response:
-            return Email.from_message_string(response["Item"].get("body"))
+            return Email.from_message_string(response["Item"].get("message")["S"])
         else:
             return None
 
@@ -235,15 +262,16 @@ class Email:
 
     def thread(self):
         dynamodb = boto3.client("dynamodb")
+
         sender_response = dynamodb.query(
             TableName=mail_table(),
             IndexName="SenderThreadIndex",
             KeyConditionExpression="sender = :sender",
+            FilterExpression="recipient = :recipient",
             ExpressionAttributeValues={
                 ":sender": {"S": self.sender.email},
                 ":recipient": {"S": self.recipient.email},
             },
-            FilterExpression="recipient = :recipient",
         )
 
         recipient_response = dynamodb.query(

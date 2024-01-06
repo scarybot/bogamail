@@ -4,3 +4,4 @@ termcolor
 ctransformers
 ctransformers[gptq]
 tqdm
+bs4
