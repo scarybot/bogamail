@@ -2,7 +2,7 @@ boto3
 pyyaml
 termcolor
 ctransformers
-ctransformers[gptq]
+ctransformers[cuda]
 tqdm
 bs4
 chardet

@@ -9,6 +9,19 @@ with open('./src/config.yaml', 'r') as file:
 
 llm = LLMInterface(root_prompt=config['system']['prompt'])
 
+def clean_email(message:str) -> str:
+    '''
+    Remove all the threads ">" from a string
+    :param message: string
+    :return: string
+    '''
+    email = ""
+    for line in message.splitlines():
+        if not line.strip().startswith(">"):
+            email += line.strip()
+
+    return email
+
 
 def main():
     while True:
@@ -21,10 +34,11 @@ def main():
 
 
 def generate_reply_to(received_email: Email) -> Email:
+    email_thread = ""
     for previous in received_email.thread():
-        # Just to give you an idea, this prints the previous emails in the thread. It might be tricky to isolate the most
-        # recent response, as each reply seems to usually include all previous responses, quoted with > marks.
-        print(f"{previous.sender.name}: {previous.body}")
+        email_thread += f"{previous.sender.name}: \n{previous.body}"
+
+    llm.parse_history(email_thread)
 
     subject = "RE: " + received_email.subject
 
@@ -33,22 +47,20 @@ def generate_reply_to(received_email: Email) -> Email:
         personality = config['accounts'][received_email.recipient.email]['personality']
     except KeyError:
         personality = ""
-    print(f"Responding to: \n {received_email.body}")
-    print(f"Responding as: \"{received_email.recipient.email}\" \n {personality}")
+
+    print(clean_email(received_email.body))
 
     llm.start_new_chat(user_prompt=personality)
-    response = llm.respond_to(received_email.body)
+    response = llm.respond_to(clean_email(received_email.body))
 
     print("=" * 32)
-    print(subject)
     print(response)
 
-    '''
     return received_email.reply(
-        subject="Hello yourself",
-        body="Well hello there!!",
+        subject=subject,
+        body=response,
     )
-    '''
+
 
 
 main()
